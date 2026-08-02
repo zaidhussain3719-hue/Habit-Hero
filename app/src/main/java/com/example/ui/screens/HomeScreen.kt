@@ -50,7 +50,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
-import com.example.ui.components.AdBannerCard
 import com.example.ui.components.CircularProgressRing
 import com.example.ui.components.HabitCard
 import com.example.ui.components.QuoteCard
@@ -70,7 +69,6 @@ fun HomeScreen(
     val quote by viewModel.quote.collectAsState()
     val userSettings by viewModel.userSettings.collectAsState()
     val selectedCategory by viewModel.selectedCategory.collectAsState()
-    val isAdBannerVisible by viewModel.isAdBannerVisible.collectAsState()
     val badges by viewModel.badges.collectAsState()
 
     val categories = listOf("All", "Health", "Study", "Fitness", "Reading", "Work", "Personal")
@@ -207,16 +205,6 @@ fun HomeScreen(
             if (nextBadge != null) {
                 item {
                     NextBadgeProgressCard(badge = nextBadge)
-                }
-            }
-
-            // Ad Banner Simulator (If not premium)
-            if (isAdBannerVisible && !userSettings.isPremium) {
-                item {
-                    AdBannerCard(
-                        onDismiss = { viewModel.dismissAdBanner() },
-                        onUpgrade = { viewModel.upgradeToPremium() }
-                    )
                 }
             }
 

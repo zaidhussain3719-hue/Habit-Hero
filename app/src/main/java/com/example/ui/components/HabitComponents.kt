@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -983,68 +984,145 @@ fun ExportReportDialog(
 @Composable
 fun AuthDialog(
     onDismiss: () -> Unit,
-    onLogin: (name: String, email: String) -> Unit
+    onLogin: (email: String, pass: String, onResult: (Boolean, String?) -> Unit) -> Unit,
+    onSignUp: (email: String, pass: String, name: String, onResult: (Boolean, String?) -> Unit) -> Unit
 ) {
-    var email by remember { mutableStateOf("hero@habithero.app") }
-    var password by remember { mutableStateOf("••••••••") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
     var isSignUp by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isLoading) onDismiss() },
         title = {
             Text(
                 text = if (isSignUp) "Create Hero Account" else "Welcome Back, Hero!",
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
         },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                if (isSignUp) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = {
+                            name = it
+                            errorMessage = null
+                        },
+                        label = { Text("Hero Name") },
+                        enabled = !isLoading,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("auth_name_input")
+                    )
+                }
+
                 OutlinedTextField(
                     value = email,
-                    onValueChange = { email = it },
+                    onValueChange = {
+                        email = it
+                        errorMessage = null
+                    },
                     label = { Text("Email Address") },
-                    modifier = Modifier.fillMaxWidth().testTag("auth_email_input")
+                    enabled = !isLoading,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("auth_email_input")
                 )
 
                 OutlinedTextField(
                     value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Password") },
+                    onValueChange = {
+                        password = it
+                        errorMessage = null
+                    },
+                    label = { Text("Password (6+ characters)") },
+                    enabled = !isLoading,
                     visualTransformation = PasswordVisualTransformation(),
-                    modifier = Modifier.fillMaxWidth().testTag("auth_password_input")
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("auth_password_input")
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                }
 
-                OutlinedButton(
-                    onClick = {
-                        onLogin("Hero Google User", email)
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Person, contentDescription = "Google")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Continue with Google")
+                if (isLoading) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            color = EmeraldPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Authenticating with Firebase...", style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    val name = email.substringBefore("@").capitalize()
-                    onLogin(name, email)
+                    if (email.isBlank() || password.isBlank()) {
+                        errorMessage = "Please fill in email and password."
+                        return@Button
+                    }
+                    if (password.length < 6) {
+                        errorMessage = "Password must be at least 6 characters."
+                        return@Button
+                    }
+                    isLoading = true
+                    errorMessage = null
+
+                    if (isSignUp) {
+                        onSignUp(email.trim(), password.trim(), name.trim()) { success, err ->
+                            isLoading = false
+                            if (!success) {
+                                errorMessage = err ?: "Sign up failed."
+                            }
+                        }
+                    } else {
+                        onLogin(email.trim(), password.trim()) { success, err ->
+                            isLoading = false
+                            if (!success) {
+                                errorMessage = err ?: "Login failed."
+                            }
+                        }
+                    }
                 },
-                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary)
+                enabled = !isLoading,
+                colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
+                modifier = Modifier.testTag("auth_submit_button")
             ) {
                 Text(if (isSignUp) "Sign Up" else "Sign In")
             }
         },
         dismissButton = {
-            TextButton(onClick = { isSignUp = !isSignUp }) {
-                Text(if (isSignUp) "Switch to Sign In" else "Create Account")
+            TextButton(
+                onClick = {
+                    isSignUp = !isSignUp
+                    errorMessage = null
+                },
+                enabled = !isLoading
+            ) {
+                Text(if (isSignUp) "Already have an account? Sign In" else "New hero? Create Account")
             }
         }
     )

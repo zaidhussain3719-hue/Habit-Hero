@@ -64,6 +64,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.compose.material3.CircularProgressIndicator
+import com.example.data.remote.AuthState
+import com.example.data.remote.SyncStatus
 import com.example.ui.theme.EmeraldPrimary
 import com.example.ui.viewmodel.HabitViewModel
 
@@ -74,6 +77,8 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val userSettings by viewModel.userSettings.collectAsState()
+    val authState by viewModel.authState.collectAsState()
+    val syncStatus by viewModel.syncStatus.collectAsState()
     val context = LocalContext.current
 
     var isTimePickerDialogVisible by remember { mutableStateOf(false) }
@@ -148,24 +153,22 @@ fun SettingsScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = userSettings.userEmail,
+                            text = if (userSettings.isLoggedIn) userSettings.userEmail else "Guest Account (Local mode)",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (userSettings.isPremium) {
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = Color(0xFFF59E0B),
-                                modifier = Modifier.padding(top = 4.dp)
-                            ) {
-                                Text(
-                                    text = "HERO PRO",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (userSettings.isLoggedIn) EmeraldPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            Text(
+                                text = if (userSettings.isLoggedIn) "FIREBASE AUTH ACTIVE" else "GUEST MODE",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (userSettings.isLoggedIn) EmeraldPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
                         }
                     }
 
@@ -173,6 +176,7 @@ fun SettingsScreen(
                         onClick = {
                             if (userSettings.isLoggedIn) {
                                 viewModel.logoutUser()
+                                Toast.makeText(context, "Logged out successfully", Toast.LENGTH_SHORT).show()
                             } else {
                                 viewModel.openAuthModal(true)
                             }
@@ -180,51 +184,6 @@ fun SettingsScreen(
                         modifier = Modifier.testTag("auth_action_button")
                     ) {
                         Text(if (userSettings.isLoggedIn) "Logout" else "Sign In")
-                    }
-                }
-            }
-        }
-
-        // Premium Monetization Card
-        if (!userSettings.isPremium) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(18.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = "Premium",
-                            tint = Color(0xFFF59E0B),
-                            modifier = Modifier.size(40.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Unlock Hero Premium",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Ad-free, unlimited habits, & exclusive dark themes",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                            )
-                        }
-                        Button(
-                            onClick = { viewModel.upgradeToPremium() },
-                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldPrimary),
-                            modifier = Modifier.testTag("upgrade_pro_button")
-                        ) {
-                            Text("Unlock")
-                        }
                     }
                 }
             }
@@ -434,7 +393,7 @@ fun SettingsScreen(
             }
         }
 
-        // Backup & Export Data Group
+        // Backup & Cloud Firestore Sync Group
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -442,30 +401,113 @@ fun SettingsScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Data & Backup",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = EmeraldPrimary,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Cloud Sync & Backup",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = EmeraldPrimary
+                        )
 
+                        if (syncStatus is SyncStatus.Syncing) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    color = EmeraldPrimary,
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Syncing...",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = EmeraldPrimary
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Sync Status Banner
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = when (syncStatus) {
+                            is SyncStatus.Syncing -> EmeraldPrimary.copy(alpha = 0.1f)
+                            is SyncStatus.Success -> Color(0xFF10B981).copy(alpha = 0.12f)
+                            is SyncStatus.Error -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+                            else -> MaterialTheme.colorScheme.surfaceVariant
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = when (syncStatus) {
+                                    is SyncStatus.Success -> Icons.Default.Check
+                                    is SyncStatus.Error -> Icons.Default.Backup
+                                    else -> Icons.Default.Backup
+                                },
+                                contentDescription = "Sync Icon",
+                                tint = when (syncStatus) {
+                                    is SyncStatus.Success -> Color(0xFF10B981)
+                                    is SyncStatus.Error -> MaterialTheme.colorScheme.error
+                                    else -> EmeraldPrimary
+                                },
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = when (syncStatus) {
+                                        is SyncStatus.Success -> (syncStatus as SyncStatus.Success).message
+                                        is SyncStatus.Error -> (syncStatus as SyncStatus.Error).errorMessage
+                                        is SyncStatus.Syncing -> "Synchronizing with Cloud Firestore..."
+                                        else -> if (userSettings.isLoggedIn) "Cloud Firestore ready for real-time sync" else "Offline mode (Sign in for Cloud Sync)"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Habits stored safely under authenticated UID",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Sync Now Action Row
                     SettingsActionRow(
-                        title = "Export Progress Summary",
-                        subtitle = "Generate shareable PDF/Text report",
-                        icon = Icons.Default.FileDownload,
-                        onClick = { viewModel.openExportModal(true) }
+                        title = "Sync Firestore Now",
+                        subtitle = "Fetch latest habits and completion logs from cloud",
+                        icon = Icons.Default.Backup,
+                        onClick = {
+                            if (userSettings.isLoggedIn) {
+                                viewModel.manualSync()
+                                Toast.makeText(context, "Cloud sync triggered 🔄", Toast.LENGTH_SHORT).show()
+                            } else {
+                                viewModel.openAuthModal(true)
+                            }
+                        }
                     )
 
                     Divider(modifier = Modifier.padding(vertical = 8.dp))
 
                     SettingsActionRow(
-                        title = "Backup & Restore Data",
-                        subtitle = "Automatic local database sync",
-                        icon = Icons.Default.Backup,
-                        onClick = {
-                            Toast.makeText(context, "Automatic cloud/local sync active!", Toast.LENGTH_SHORT).show()
-                        }
+                        title = "Export Progress Summary",
+                        subtitle = "Generate shareable text report",
+                        icon = Icons.Default.FileDownload,
+                        onClick = { viewModel.openExportModal(true) }
                     )
                 }
             }

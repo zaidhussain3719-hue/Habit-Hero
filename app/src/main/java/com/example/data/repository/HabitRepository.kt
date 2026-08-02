@@ -3,6 +3,7 @@ package com.example.data.repository
 import com.example.data.local.HabitDao
 import com.example.data.local.HabitEntity
 import com.example.data.local.HabitLogEntity
+import com.example.data.remote.FirebaseSyncRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
@@ -35,7 +36,10 @@ data class BadgeItem(
     val unlockedAt: String? = null
 )
 
-class HabitRepository(private val habitDao: HabitDao) {
+class HabitRepository(
+    private val habitDao: HabitDao,
+    private val firebaseSyncRepository: FirebaseSyncRepository? = null
+) {
 
     val allActiveHabits: Flow<List<HabitEntity>> = habitDao.getAllActiveHabits()
     val allHabits: Flow<List<HabitEntity>> = habitDao.getAllHabits()
@@ -45,13 +49,22 @@ class HabitRepository(private val habitDao: HabitDao) {
 
     suspend fun getHabitById(id: Long): HabitEntity? = habitDao.getHabitById(id)
 
-    suspend fun insertHabit(habit: HabitEntity): Long = habitDao.insertHabit(habit)
+    suspend fun insertHabit(habit: HabitEntity): Long {
+        val newId = habitDao.insertHabit(habit)
+        val habitToSync = if (habit.id == 0L) habit.copy(id = newId) else habit
+        firebaseSyncRepository?.syncHabitToFirestore(habitToSync)
+        return newId
+    }
 
-    suspend fun updateHabit(habit: HabitEntity) = habitDao.updateHabit(habit)
+    suspend fun updateHabit(habit: HabitEntity) {
+        habitDao.updateHabit(habit)
+        firebaseSyncRepository?.syncHabitToFirestore(habit)
+    }
 
     suspend fun deleteHabit(id: Long) {
         habitDao.deleteHabitById(id)
         habitDao.deleteAllLogsForHabit(id)
+        firebaseSyncRepository?.deleteHabitFromFirestore(id)
     }
 
     suspend fun toggleHabitCheckIn(habitId: Long, dateStr: String) {
@@ -60,15 +73,16 @@ class HabitRepository(private val habitDao: HabitDao) {
         if (existingLog != null) {
             // Already completed today -> remove log (uncheck)
             habitDao.deleteLog(existingLog)
+            firebaseSyncRepository?.deleteLogFromFirestore(habitId, dateStr)
         } else {
             // Check in -> create log
-            habitDao.insertLog(
-                HabitLogEntity(
-                    habitId = habitId,
-                    date = dateStr,
-                    completedCount = habit.targetCount
-                )
+            val log = HabitLogEntity(
+                habitId = habitId,
+                date = dateStr,
+                completedCount = habit.targetCount
             )
+            habitDao.insertLog(log)
+            firebaseSyncRepository?.syncLogToFirestore(log)
         }
     }
 

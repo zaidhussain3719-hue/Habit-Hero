@@ -8,6 +8,9 @@ import com.example.data.local.HabitEntity
 import com.example.data.local.HabitLogEntity
 import com.example.data.preferences.UserPreferencesRepository
 import com.example.data.preferences.UserSettings
+import com.example.data.remote.AuthState
+import com.example.data.remote.FirebaseSyncRepository
+import com.example.data.remote.SyncStatus
 import com.example.data.repository.BadgeItem
 import com.example.data.repository.HabitRepository
 import com.example.data.repository.MotivationalQuote
@@ -27,8 +30,12 @@ import java.time.format.DateTimeFormatter
 class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     private val habitDao = HabitDatabase.getDatabase(application, viewModelScope).habitDao()
-    private val repository = HabitRepository(habitDao)
+    val firebaseSyncRepository = FirebaseSyncRepository(habitDao, viewModelScope)
+    private val repository = HabitRepository(habitDao, firebaseSyncRepository)
     private val preferencesRepository = UserPreferencesRepository(application)
+
+    val authState: StateFlow<AuthState> = firebaseSyncRepository.authState
+    val syncStatus: StateFlow<SyncStatus> = firebaseSyncRepository.syncStatus
 
     val formatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
     val todayStr: String = LocalDate.now().format(formatter)
@@ -112,6 +119,19 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         refreshStatsAndLogs()
+        viewModelScope.launch {
+            authState.collect { auth ->
+                when (auth) {
+                    is AuthState.Authenticated -> {
+                        preferencesRepository.setUserLogin(isLoggedIn = true, name = auth.displayName, email = auth.email)
+                    }
+                    is AuthState.Unauthenticated -> {
+                        preferencesRepository.setUserLogin(isLoggedIn = false, name = "Guest User", email = "guest@habithero.app")
+                    }
+                    else -> {}
+                }
+            }
+        }
     }
 
     fun refreshStatsAndLogs() {
@@ -230,16 +250,54 @@ class HabitViewModel(application: Application) : AndroidViewModel(application) {
         _isAdBannerVisible.value = false
     }
 
-    fun loginUser(name: String, email: String) {
+    fun loginWithEmail(email: String, pass: String, onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
-            preferencesRepository.setUserLogin(isLoggedIn = true, name = name, email = email)
-            _isAuthModalOpen.value = false
+            val result = firebaseSyncRepository.loginWithEmail(email, pass)
+            result.fold(
+                onSuccess = { user ->
+                    val name = user.displayName ?: email.substringBefore("@")
+                    preferencesRepository.setUserLogin(isLoggedIn = true, name = name, email = user.email ?: email)
+                    _isAuthModalOpen.value = false
+                    refreshStatsAndLogs()
+                    onResult(true, null)
+                },
+                onFailure = { error ->
+                    onResult(false, error.localizedMessage ?: "Login failed")
+                }
+            )
+        }
+    }
+
+    fun signUpWithEmail(email: String, pass: String, name: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            val result = firebaseSyncRepository.signUpWithEmail(email, pass, name)
+            result.fold(
+                onSuccess = { user ->
+                    val userName = if (name.isNotBlank()) name else email.substringBefore("@")
+                    preferencesRepository.setUserLogin(isLoggedIn = true, name = userName, email = user.email ?: email)
+                    _isAuthModalOpen.value = false
+                    refreshStatsAndLogs()
+                    onResult(true, null)
+                },
+                onFailure = { error ->
+                    onResult(false, error.localizedMessage ?: "Sign up failed")
+                }
+            )
         }
     }
 
     fun logoutUser() {
         viewModelScope.launch {
+            firebaseSyncRepository.logout()
             preferencesRepository.setUserLogin(isLoggedIn = false, name = "Guest User", email = "guest@habithero.app")
+            refreshStatsAndLogs()
+        }
+    }
+
+    fun manualSync() {
+        val uid = firebaseSyncRepository.getCurrentUserId()
+        if (!uid.isNullOrBlank()) {
+            firebaseSyncRepository.startFirestoreSync(uid)
         }
     }
 

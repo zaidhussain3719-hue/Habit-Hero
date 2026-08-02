@@ -171,8 +171,11 @@ fun HabitHeroApp(viewModel: HabitViewModel) {
         if (isAuthModalOpen) {
             AuthDialog(
                 onDismiss = { viewModel.openAuthModal(false) },
-                onLogin = { name, email ->
-                    viewModel.loginUser(name, email)
+                onLogin = { email, pass, onResult ->
+                    viewModel.loginWithEmail(email, pass, onResult)
+                },
+                onSignUp = { email, pass, name, onResult ->
+                    viewModel.signUpWithEmail(email, pass, name, onResult)
                 }
             )
         }
